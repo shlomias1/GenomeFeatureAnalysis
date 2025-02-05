@@ -4,6 +4,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import IPython.display as display
+from csv import Error
+import requests
+import io
+from matplotlib_venn import venn2
+import gzip
+import re
 
 def count_genome_elements(file_path):
     element_counts = {}  
@@ -172,6 +178,100 @@ def save_gene_info_to_csv(file_path, output_file="gene_info.csv"):
     df.to_csv(output_file, index=False)
     print(f"\n✅ Gene information saved to {output_file}")
 
+def fetch_all_uniprot_data(query, fields):
+    uniprot_url = "https://rest.uniprot.org/uniprotkb/search"
+    params = {
+        "query": query,
+        "fields": fields,
+        "format": "tsv"    
+    }
+    response = requests.get(uniprot_url, params=params)
+    if response.status_code == 200:
+        df_uniprot = pd.read_csv(io.StringIO(response.text), sep="\t")
+        total_results = response.headers.get("X-Total-Results")
+        batch_size = response.headers.get("Link").split("size=")[-1].split("&")[0].split(">")[0]
+        if int(batch_size) < int(total_results):
+            return None
+        return df_uniprot
+    else:
+        return None
+
+def fetch_genbank_genes(file_path):
+    gene_names = set()
+    with open(file_path, "r") as file:
+        records = SeqIO.parse(file, "genbank")
+        for record in records:
+            for feature in record.features:
+                if feature.type == "CDS" and "gene" in feature.qualifiers:
+                    gene_name = feature.qualifiers["gene"][0]
+                    gene_names.add(gene_name)
+    return gene_names
+
+def cross_reference_genes(genbank_genes, uniprot_genes):
+    plt.figure(figsize=(6,6))
+    venn = venn2([genbank_genes, uniprot_genes], ('GenBank', 'UniProt'))
+    only_in_genbank = int(venn.get_label_by_id('10').get_text().strip())
+    only_in_uniprot = int(venn.get_label_by_id('01').get_text().strip())
+    common_genes = int(venn.get_label_by_id('11').get_text().strip())
+    plt.title("Comparison of Gene Overlap Between GenBank and UniProt")
+    plt.show()
+    return only_in_genbank, only_in_uniprot, common_genes
+
+def find_top_bottom_proteins(df_uniprot, top_n=5):
+    df_uniprot_sorted = df_uniprot.sort_values(by="Length", ascending=False)  
+    top_proteins = df_uniprot_sorted.head(top_n) 
+    bottom_proteins = df_uniprot_sorted.tail(top_n)  
+    print("\n===== 🔝 Top 5 Longest Proteins =====")
+    display(top_proteins[["Protein names", "Length"]])
+    print("\n===== 🔻 Top 5 Shortest Proteins =====")
+    display(bottom_proteins[["Protein names", "Length"]])
+    return top_proteins, bottom_proteins
+
+def analyze_transmembrane_regions(df_uniprot):
+    transmembrane_lengths = [] 
+    transmembrane_proteins = 0 
+    for index, row in df_uniprot.iterrows():
+        if pd.notna(row["Transmembrane"]):  
+            transmembrane_proteins += 1  
+            matches = re.findall(r"(\d+)\.\.(\d+)", row["Transmembrane"]) 
+            for match in matches:
+                start, end = map(int, match)  
+                length = end - start + 1 
+                transmembrane_lengths.append(length)
+    num_regions = len(transmembrane_lengths)
+    avg_length = np.mean(transmembrane_lengths) if transmembrane_lengths else 0
+    min_length = np.min(transmembrane_lengths) if transmembrane_lengths else 0
+    max_length = np.max(transmembrane_lengths) if transmembrane_lengths else 0
+    print("\n===== 📊 Transmembrane Analysis =====")
+    print(f"🟢 Proteins with transmembrane region: {transmembrane_proteins}")
+    print(f"🟢 Total transmembrane regions: {num_regions}")
+    print(f"📏 Minimum length: {min_length}, Maximum: {max_length}, Average: {avg_length:.2f}")
+    if transmembrane_lengths:
+        plot_histogram(transmembrane_lengths, "Distribution of Transmembrane Region Lengths", "purple")
+    return transmembrane_proteins, num_regions, transmembrane_lengths
+
+def analyze_hydrophobic_content(df_uniprot,hydrophobic_amino_acids):
+    hydrophobic_percentages = []
+    for index, row in df_uniprot.iterrows():
+        if pd.notna(row["Transmembrane"]) and pd.notna(row["Sequence"]):
+            matches = re.findall(r"(\d+)\.\.(\d+)", row["Transmembrane"])  
+            for match in matches:
+                start, end = map(int, match)
+                transmembrane_seq = row["Sequence"][start-1:end]      
+                if transmembrane_seq:
+                    hydrophobic_count = sum(1 for aa in transmembrane_seq if aa in hydrophobic_amino_acids)
+                    hydrophobic_percentage = (hydrophobic_count / len(transmembrane_seq)) * 100
+                    hydrophobic_percentages.append(hydrophobic_percentage)
+    avg_hydrophobic = np.mean(hydrophobic_percentages) if hydrophobic_percentages else 0
+    min_hydrophobic = np.min(hydrophobic_percentages) if hydrophobic_percentages else 0
+    max_hydrophobic = np.max(hydrophobic_percentages) if hydrophobic_percentages else 0
+    print("\n===== 📊 Hydrophobic Amino Acid Analysis in Transmembrane Sequences =====")
+    print(f"🟢 Average hydrophobic amino acid percentage: {avg_hydrophobic:.2f}%")
+    print(f"📏 Minimum: {min_hydrophobic:.2f}%, Maximum: {max_hydrophobic:.2f}%")
+    if hydrophobic_percentages:
+        plot_histogram(hydrophobic_percentages, "Distribution of Hydrophobic Amino Acid Content in Transmembrane Sequences", "blue")
+    return avg_hydrophobic, hydrophobic_percentages
+
 def main():
     uploaded = files.upload()
     file_path = next(iter(uploaded)) 
@@ -184,12 +284,12 @@ def main():
     plot_bar_chart(df, x="Element Type", y="Count", title="Distribution of Genome Element Counts")
 
     pseudo_gene_count = count_pseudo_genes(file_path)
-    print(f"\nTotal pseudo-genes: {pseudo_gene_count}")
 
     protein_coding_gene_lengths = extract_gene_lengths(file_path, "CDS")
-    pseudo_gene_lengths = extract_gene_lengths(file_path, "gene")
+    pseudo_gene_lengths = count_pseudo_genes(file_path)
     total_gene_lengths = extract_gene_lengths(file_path, "gene")
-
+    print(f"\nTotal pseudo-genes: {pseudo_gene_count}")
+    print(f"\nTotal genes: {len(total_gene_lengths)}")
     print(f"\nAverage Protein-Coding Gene Length: {np.mean(protein_coding_gene_lengths):.2f} bp")
     print(f"Average Pseudo Gene Length: {np.mean(pseudo_gene_lengths):.2f} bp")
     print(f"Average All Genes Length: {np.mean(total_gene_lengths):.2f} bp")
@@ -214,6 +314,26 @@ def main():
 
     save_gene_info_to_csv(file_path, output_file="gene_info.csv")
     files.download("gene_info.csv")
+
+    query = "organism_name:Bacillus AND reviewed:true"
+    fields = "accession,id,protein_name,gene_names,organism_name,length,ft_transmem,gene_primary,organism_id,sequence"
+    df_uniprot = fetch_all_uniprot_data(query,fields)
+    if df_uniprot is None:
+        uploaded = files.upload()
+        uniprot_file_path = next(iter(uploaded))
+        with gzip.open(uniprot_file_path, "rt") as f:
+          df_uniprot = pd.read_csv(f, sep="\t")
+    genbank_genes = fetch_genbank_genes(file_path)
+    only_in_genbank, only_in_uniprot, common_genes = cross_reference_genes(genbank_genes, set(df_uniprot["Gene Names"].dropna()))
+    print(f"Total genes in GenBank: {len(genbank_genes)}")
+    print(f"Total genes in UniProt: {len(set(df_uniprot['Gene Names'].dropna()))}")
+    print(f"Genes only in GenBank: {only_in_genbank}")
+    print(f"Genes only in UniProt: {only_in_uniprot}")
+    print(f"Common genes in both: {common_genes}")
+    find_top_bottom_proteins(df_uniprot)
+    analyze_transmembrane_regions(df_uniprot)
+    hydrophobic_amino_acids = {"A", "P", "L", "I", "V", "M", "P", "T"}
+    analyze_hydrophobic_content(df_uniprot, hydrophobic_amino_acids)
 
 if __name__ == "__main__":
     main()
