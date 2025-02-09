@@ -1,89 +1,87 @@
-# Genome Feature Analysis
+# Genome Analysis - README
 
-## Overview
-This project analyzes genome data, specifically from Bacillus subtilis, using GenBank and UniProt datasets. The script processes genome annotations, calculates statistical metrics, and visualizes results to gain insights into genome composition, gene distributions, and sequence characteristics.
+## 📌 Introduction
+This project provides an **object-oriented** implementation for **analyzing genomic data** from GenBank files. The script allows users to **extract genomic features**, analyze **pseudo-genes**, compute **nucleotide composition**, and cross-reference **UniProt protein data**.
 
-## Features
-- **Element Counting**: Counts various genome elements such as genes, CDS, tRNA, and rRNA.
-- **Pseudo-Gene Identification**: Detects and counts pseudo-genes.
-- **Gene Length Analysis**: Extracts gene lengths and visualizes distributions.
-- **CA% Analysis**: Calculates the percentage of C and A nucleotides in the genome and in protein-coding genes.
-- **Hydrophobic Amino Acid Analysis**: Examines transmembrane regions and their hydrophobic content.
-- **Cross-referencing GenBank and UniProt**: Compares gene names between datasets and visualizes overlaps using a Venn diagram.
-- **Data Export**: Saves processed genome data to a CSV file.
+The project uses **Biopython, Pandas, Matplotlib, and Requests** for processing genomic sequences and generating visualizations.
 
-## Dependencies
-- `biopython`
-- `pandas`
-- `numpy`
-- `matplotlib`
-- `matplotlib_venn`
-- `requests`
-- `gzip`
-- `io`
+## 📦 Features
+- **Parse GenBank files** to extract genomic elements
+- **Analyze pseudo-genes** and coding sequences (CDS)
+- **Calculate CA% composition** across the genome and protein-coding genes
+- **Cross-reference genes with UniProt database** for further protein analysis
+- **Visualize data** with histograms, bar charts, and Venn diagrams
+- **Save extracted gene information to CSV**
 
-## Installation
-Ensure you have the required dependencies installed:
+## 🚀 Installation
+Ensure you have the following Python libraries installed:
 ```bash
-pip install biopython pandas numpy matplotlib matplotlib-venn requests
+pip install biopython pandas matplotlib requests
+```
+If you're running this in Google Colab, `google.colab` is pre-installed.
+
+## 📂 Project Structure
+```
+📦 Genome Analysis
+├── genome_parser.py        # Handles parsing of GenBank files and genome feature extraction
+├── genome_analysis.py      # Contains visualization and statistical analysis functions
+├── uniprot_fetcher.py      # Handles fetching and processing UniProt data
+├── transmembrane_analysis.py  # Analyzes transmembrane and hydrophobicity properties
+├── genome_pipeline.py      # Main execution pipeline for genome analysis
+├── README.md               # Documentation (this file)
 ```
 
-## Usage
-1. Upload a GenBank file (`.gb` format) and a UniProt `.tsv.gz` file when prompted.
-2. The script processes the data and performs various analyses.
-3. Outputs are displayed, including tables and plots.
-4. The final dataset is saved as `gene_info.csv` for further investigation.
+## 🔧 Usage
+### **1️⃣ Upload a GenBank File**
+When running the script, the user is prompted to upload a GenBank file:
+```python
+uploaded = files.upload()
+file_path = next(iter(uploaded))
+```
 
-## Functions
-### `count_genome_elements(file_path)`
-Counts occurrences of different genome elements and returns a dictionary.
+### **2️⃣ Run the Analysis**
+To execute the pipeline:
+```python
+query = "organism_name:Bacillus AND reviewed:true"
+fields = "accession,id,protein_name,gene_names,organism_name,length,ft_transmem,gene_primary,organism_id,sequence"
+pipeline = GenomePipeline(query, fields)
+pipeline.run_analysis()
+```
 
-### `count_pseudo_genes(file_path)`
-Identifies and counts pseudo-genes.
+### **3️⃣ Output Results**
+- **Genomic Features Count**: Displays the distribution of element types in the genome
+- **Pseudo-Gene Analysis**: Computes the count and length distribution of pseudo-genes
+- **CA% Computation**: Calculates C and A nucleotide frequency in coding and non-coding sequences
+- **Gene Overlap Analysis**: Uses Venn diagram to compare genes in **GenBank** and **UniProt**
+- **Protein Analysis**: Fetches UniProt data, finds longest/shortest proteins, and analyzes transmembrane regions
 
-### `extract_gene_lengths(file_path, gene_type="CDS")`
-Extracts gene lengths for protein-coding genes, pseudo-genes, or other specified types.
+### **4️⃣ Save & Download Data**
+The extracted gene information is saved to `gene_info.csv`:
+```python
+self.genome_parser.save_gene_info_to_csv()
+files.download("gene_info.csv")
+```
 
-### `calculate_ca_percentage(file_path)`
-Computes the C and A nucleotide percentage across the entire genome.
+## 📊 Visualizations
+The analysis generates various plots, including:
+- **Genome Element Distribution (Bar Chart)**
+- **Pseudo-Gene and CDS Length Distributions (Histograms)**
+- **CA% Distribution in Protein-Coding Genes**
+- **Transmembrane Region Lengths**
+- **Hydrophobicity Distribution in Transmembrane Proteins**
 
-### `calculate_ca_percentage_per_gene(file_path)`
-Computes CA% per protein-coding gene.
+## 🔍 Example Output
+```
+===== CA% Comparison =====
+CA% in the entire genome: 54.32%
+CA% in protein-coding genes: 50.12%
+Conclusion: The CA% in protein-coding genes is lower than in the genome, suggesting that non-coding regions contain more C and A bases.
+```
 
-### `compare_ca_percentage(genome_ca, coding_genes_ca)`
-Compares CA% of the entire genome vs. protein-coding genes and provides insights.
+## 🛠 Future Improvements
+- Support for multiple sequence file formats (FASTA, EMBL)
+- Additional protein structural analysis (e.g., AlphaFold integration)
+- More efficient parallelized data fetching from UniProt
 
-### `top_bottom_ca_genes(file_path, top_n=5)`
-Finds the top 5 and bottom 5 genes based on CA%.
-
-### `plot_histogram(data, title, color="blue")`
-Plots histograms for gene length distributions.
-
-### `fetch_all_uniprot_data(query, fields)`
-Retrieves data from UniProt API for Bacillus subtilis with relevant fields.
-
-### `fetch_genbank_genes(file_path)`
-Extracts gene names from a GenBank file.
-
-### `cross_reference_genes(genbank_genes, df_uniprot)`
-Compares gene names between GenBank and UniProt and generates a Venn diagram.
-
-### `analyze_hydrophobic_content(df_uniprot, hydrophobic_amino_acids)`
-Analyzes the percentage of hydrophobic amino acids in transmembrane sequences.
-
-### `save_gene_info_to_csv(file_path, output_file="gene_info.csv")`
-Saves analyzed gene data into a CSV file.
-
-## Expected Outputs
-- Tables displaying genome element counts, gene statistics, and CA% metrics.
-- Histograms for gene length distributions.
-- Venn diagrams comparing GenBank and UniProt genes.
-- CSV file containing gene details and calculated metrics.
-
-## Notes
-- Some genes in UniProt may have multiple names, requiring careful cross-referencing.
-- Not all proteins have transmembrane regions; analysis accounts for missing data.
-- Data retrieval from UniProt API is limited to batches and may require pagination.
-
-## License
-This project is open-source under the MIT License.
+## 📝 License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
